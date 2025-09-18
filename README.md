@@ -1,8 +1,9 @@
 # 🐝 Hive — Distributed AI Worker Queue
 
 <p align="center">
-  <img src="public/logo.png" alt="Hive Banner" width="128" style="border-radius: 50%;"/>
+  <img src="public/hive.gif" alt="Hive Banner" width="256" style="border-radius: 50%;"/>
 </p>
+
 
 ## Overview
 Hive is a distributed system that manages **task execution across multiple worker containers**.  
