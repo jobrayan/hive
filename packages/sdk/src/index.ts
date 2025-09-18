@@ -11,15 +11,23 @@ export const EnqueueSchema = z.object({
   branch: z.string().optional(),
   base: z.string().optional(),
   githubToken: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type EnqueueBody = z.infer<typeof EnqueueSchema>;
 
+/**
+ * The response for a claim attempt:
+ * - Either `job: { ... , claimId }` when a job is available
+ * - Or `error` string describing why a job was not returned
+ */
 export type ClaimResponse =
   | { job: (EnqueueBody & { claimId: string }) | null }
   | { error: string };
 
+/**
+ * Worker callback payload describing the current status and optional logs/metadata.
+ */
 export type CallbackPayload = {
   claimId: string;
   workerId: string;
@@ -63,6 +71,22 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
 }
 
 /**
+ * Safe environment variable reader that doesn't rely on Node.js types.
+ * Works in Node (CJS/ESM), Edge, Workers, and Browser (returns undefined).
+ *
+ * @param name - Environment variable key to read
+ * @returns The value if found, otherwise undefined
+ */
+function readEnv(name: string): string | undefined {
+  try {
+    const g = globalThis as any;
+    return g?.process?.env?.[name] ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Minimal HTTP client to speak with a Hive dispatcher instance.
  */
 export class HiveClient {
@@ -90,6 +114,7 @@ export class HiveClient {
   /**
    * Check health of the dispatcher.
    *
+   * @typeParam T - Shape of the expected health response
    * @returns Dispatcher health JSON payload
    */
   async health<T = Record<string, unknown>>(): Promise<T> {
@@ -117,7 +142,7 @@ export class HiveClient {
   /**
    * Claim the next available job for a worker.
    *
-   * @returns A job with a claimId or an error message
+   * @returns A job with a claimId, or an error message, or `job: null` if empty
    */
   async claim(): Promise<ClaimResponse> {
     return requestJson(`${this.baseUrl}/claim`, { method: "POST" });
@@ -149,6 +174,11 @@ export class HiveClient {
  * @returns App Router POST handler
  */
 export function createNextClaimRoute(client: HiveClient) {
+  /**
+   * POST handler which claims a job from the dispatcher.
+   *
+   * @returns A standard `Response` containing the claim result as JSON
+   */
   return async function POST(): Promise<Response> {
     const data = await client.claim();
     return new Response(JSON.stringify(data), {
@@ -165,6 +195,12 @@ export function createNextClaimRoute(client: HiveClient) {
  * @returns App Router POST handler that validates shared secret (if set)
  */
 export function createNextCallbackRoute(client: HiveClient) {
+  /**
+   * POST handler which forwards worker callback payloads to the dispatcher.
+   *
+   * @param req - Incoming request containing the {@link CallbackPayload}
+   * @returns A standard `Response` with `200` on success, `401` on failure
+   */
   return async function POST(req: Request): Promise<Response> {
     const body = await req.json();
     const data = await client.callback(body as CallbackPayload);
@@ -186,9 +222,9 @@ export function createNextCallbackRoute(client: HiveClient) {
  * @returns A configured {@link HiveClient}
  */
 export function envClient(): HiveClient {
-  const baseUrl = process.env.HIVE_BASE_URL ?? "http://localhost:8099";
+  const baseUrl = readEnv("HIVE_BASE_URL") ?? "http://localhost:8099";
   return new HiveClient(baseUrl, {
-    internalToken: process.env.HIVE_INTERNAL_TOKEN,
-    callbackSecret: process.env.HIVE_CALLBACK_SECRET,
+    internalToken: readEnv("HIVE_INTERNAL_TOKEN"),
+    callbackSecret: readEnv("HIVE_CALLBACK_SECRET"),
   });
 }
