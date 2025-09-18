@@ -11,15 +11,22 @@ on:
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
+# Needed for GitHub Releases and npm provenance (OIDC)
 permissions:
   contents: write
   issues: read
   pull-requests: read
+  id-token: write
+
+concurrency:
+  group: release-hive-sdk-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,6 +45,30 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
+      # Optional but helpful: show tool versions in logs
+      - name: Show tool versions
+        run: |
+          node -v
+          npm -v
+          pnpm -v
+
+      # Fail early if NPM_TOKEN is missing
+      - name: Check NPM_TOKEN
+        run: |
+          if [ -z "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "NPM_TOKEN is not set in repo/org Actions secrets." >&2
+            exit 1
+          fi
+
+      # Configure npm auth for publish + enable provenance
+      - name: Configure npm auth
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          # Optional diagnostics (won't fail the build if whoami is restricted)
+          npm ping || true
+
       - name: Install (workspace root)
         run: pnpm install --frozen-lockfile
 
@@ -45,9 +76,18 @@ jobs:
         working-directory: packages/sdk
         run: pnpm build
 
+      # If you use @semantic-release/git to commit CHANGELOG/version bumps,
+      # set a git identity to avoid "missing author" errors.
+      - name: Configure git user (for semantic-release git plugin)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # npm 9.5+ supports provenance; Node 20 ships npm ≥10
           NPM_CONFIG_PROVENANCE: "true"
+        # Run from repo root so plugins from devDependencies resolve
         run: npx semantic-release
