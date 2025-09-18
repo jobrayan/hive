@@ -1,0 +1,64 @@
+// Standalone Prisma schema for the Hive framework (optional).
+// This lets the dispatcher/SDK have its own DB contract if needed,
+// independent from the main app DB. You can point this at a separate
+// database via HIVE_DATABASE_URL when generating a client in a Node service.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("HIVE_DATABASE_URL")
+}
+
+enum TaskRunStatus {
+  PENDING
+  RUNNING
+  FAILED
+  SUCCEEDED
+}
+
+enum TaskEventType {
+  PROGRESS
+  SUCCESS
+  ERROR
+}
+
+model TaskRun {
+  id         String        @id @default(cuid())
+  jobId      String        @unique
+  status     TaskRunStatus @default(PENDING)
+  runner     String        @default("hive")
+
+  // Optional context
+  projectId  String?
+  ticketId   String?
+  repo       String?
+  branch     String?
+  base       String?
+  title      String?
+  description String?
+
+  metadata   Json?
+  logs       Json?
+
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  events     TaskEvent[]
+}
+
+model TaskEvent {
+  id        String        @id @default(cuid())
+  runId     String
+  run       TaskRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  type      TaskEventType
+  message   String?
+  logs      Json?
+  metadata  Json?
+  createdAt DateTime      @default(now())
+
+  @@index([runId])
+}
+
