@@ -3,6 +3,12 @@ name: Release Hive SDK
 on:
   push:
     branches: ["main"]
+    paths:
+      - "packages/sdk/**"
+      - ".releaserc.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
@@ -32,7 +38,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
-      - name: Install dependencies
+      - name: Install (workspace root)
         run: pnpm install --frozen-lockfile
 
       - name: Build SDK
@@ -43,4 +49,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
         run: npx semantic-release

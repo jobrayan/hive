@@ -1,4 +1,3 @@
-import { request } from "undici";
 import { z } from "zod";
 
 /**
@@ -29,14 +28,38 @@ export type CallbackPayload = {
   metadata?: Record<string, unknown>;
 };
 
+/**
+ * Normalize a base URL by removing a trailing slash so downstream paths
+ * can be concatenated with a single slash.
+ *
+ * @param baseUrl - Raw base URL (may end with '/')
+ * @returns Normalized base URL without trailing slash
+ */
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
 }
 
+/**
+ * Perform an HTTP request and parse JSON with strict error propagation.
+ *
+ * - Uses global `fetch` (Node ≥ 18 / Next.js runtimes).
+ * - Throws on non-2xx with response text included for easier diagnosis.
+ *
+ * @typeParam T - Expected JSON body type
+ * @param url - Absolute or relative URL
+ * @param init - Fetch init options
+ * @returns Parsed JSON body
+ * @throws Error with HTTP status & body snippet when `res.ok` is false
+ */
 async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
-  const response = await request(url, init);
-  const body = await response.body.json();
-  return body as T;
+  const res = await fetch(url, init);
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
+  }
+
+  return (await res.json()) as T;
 }
 
 /**
@@ -47,6 +70,14 @@ export class HiveClient {
   private readonly internalToken?: string;
   private readonly callbackSecret?: string;
 
+  /**
+   * Construct a HiveClient.
+   *
+   * @param baseUrl - Dispatcher base URL (e.g., "http://localhost:8099")
+   * @param options - Optional authorization secrets
+   * @param options.internalToken - Bearer token for protected dispatcher endpoints
+   * @param options.callbackSecret - Shared secret for `/callback` header ("x-callback-secret")
+   */
   constructor(
     baseUrl: string,
     options: { internalToken?: string; callbackSecret?: string } = {},
@@ -56,10 +87,21 @@ export class HiveClient {
     this.callbackSecret = options.callbackSecret;
   }
 
+  /**
+   * Check health of the dispatcher.
+   *
+   * @returns Dispatcher health JSON payload
+   */
   async health<T = Record<string, unknown>>(): Promise<T> {
     return requestJson<T>(`${this.baseUrl}/health`, { method: "GET" });
   }
 
+  /**
+   * Enqueue a job onto the dispatcher.
+   *
+   * @param job - Job payload matching {@link EnqueueSchema}
+   * @returns Acceptance & current queue length
+   */
   async enqueue(job: EnqueueBody): Promise<{ accepted: boolean; queueLength: number }> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.internalToken) {
@@ -72,10 +114,21 @@ export class HiveClient {
     });
   }
 
+  /**
+   * Claim the next available job for a worker.
+   *
+   * @returns A job with a claimId or an error message
+   */
   async claim(): Promise<ClaimResponse> {
     return requestJson(`${this.baseUrl}/claim`, { method: "POST" });
   }
 
+  /**
+   * Send a worker callback (status/logs/metadata) to the dispatcher.
+   *
+   * @param payload - Worker status update
+   * @returns `{ ok: boolean, error?: string }`
+   */
   async callback(payload: CallbackPayload): Promise<{ ok: boolean; error?: string }> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.callbackSecret) {
@@ -91,6 +144,9 @@ export class HiveClient {
 
 /**
  * Create a Next.js App Router handler that proxies POST /claim to the dispatcher.
+ *
+ * @param client - A configured {@link HiveClient} instance
+ * @returns App Router POST handler
  */
 export function createNextClaimRoute(client: HiveClient) {
   return async function POST(): Promise<Response> {
@@ -104,6 +160,9 @@ export function createNextClaimRoute(client: HiveClient) {
 
 /**
  * Create a Next.js App Router handler that forwards worker callbacks to the dispatcher.
+ *
+ * @param client - A configured {@link HiveClient} instance
+ * @returns App Router POST handler that validates shared secret (if set)
  */
 export function createNextCallbackRoute(client: HiveClient) {
   return async function POST(req: Request): Promise<Response> {
@@ -118,6 +177,13 @@ export function createNextCallbackRoute(client: HiveClient) {
 
 /**
  * Helper that reads standard Hive environment variables to build a client instance.
+ *
+ * Env:
+ * - `HIVE_BASE_URL` (default: http://localhost:8099)
+ * - `HIVE_INTERNAL_TOKEN` (optional)
+ * - `HIVE_CALLBACK_SECRET` (optional)
+ *
+ * @returns A configured {@link HiveClient}
  */
 export function envClient(): HiveClient {
   const baseUrl = process.env.HIVE_BASE_URL ?? "http://localhost:8099";
