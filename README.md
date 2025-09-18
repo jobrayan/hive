@@ -33,37 +33,76 @@ See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for full details.
 
 ---
 
-## 🚀 Quick Start (Local)
-1. **Clone & Build**
-   ```bash
-   git clone https://github.com/your-org/hive.git
-   cd hive
-   docker compose up -d --build
-   ```
+## 📦 Monorepo Layout
 
-2. **Check health**
-   ```bash
-   curl http://localhost:8099/health
-   ```
+```
+hive/
+├─ apps/
+│  └─ dispatcher/      # NestJS dispatcher (queue + claim endpoints)
+├─ packages/
+│  └─ sdk/             # Published npm package `hive`
+├─ .github/workflows/  # Release automation (semantic-release)
+├─ CHANGELOG.md
+├─ package.json        # pnpm workspace root
+└─ pnpm-workspace.yaml
+```
 
-3. **Enqueue a task**
-   ```bash
-   curl -X POST http://localhost:8099/enqueue      -H "Authorization: Bearer $INTERNAL_API_TOKEN"      -H "Content-Type: application/json"      -d '{
-       "jobId": "demo-1",
-       "repo": "https://github.com/jobrayan/codimir-web.git",
-       "branch": "ci/demo",
-       "base": "main",
-       "task": "agent",
-       "instructions": "Add README quickstart",
-       "githubToken": "ghp_..."
-     }'
-   ```
+### SDK (`packages/sdk`)
+- Exports `HiveClient`, `createNextClaimRoute`, `createNextCallbackRoute`, and `envClient()`.
+- Installable via `pnpm add hive` inside any Next.js (App Router) project.
+- Built with `tsup`, published automatically via semantic-release.
 
-4. **Watch logs**
-   ```bash
-   docker logs -f hive-dispatcher
-   docker logs -f hive-worker-1
-   ```
+### Dispatcher (`apps/dispatcher`)
+- NestJS service that exposes `/health`, `/enqueue`, `/claim`, `/callback`.
+- Designed for container deployments (Fly.io, Render, bare Docker).
+- Future roadmap: Redis-backed queue, multi-tenant auth, Web dashboard.
+
+## 🚀 Quick Start (SDK)
+Install inside your Next.js project:
+
+```bash
+pnpm add hive
+```
+
+Create route handlers:
+
+```ts
+// app/api/hive/claim/route.ts
+import { envClient, createNextClaimRoute } from "hive";
+
+const client = envClient();
+export const POST = createNextClaimRoute(client);
+```
+
+```ts
+// app/api/hive/callback/route.ts
+import { envClient, createNextCallbackRoute } from "hive";
+
+const client = envClient();
+export const POST = createNextCallbackRoute(client);
+```
+
+Enqueue from a server action:
+
+```ts
+import { envClient, EnqueueBody } from "hive";
+
+export async function enqueueJob(body: EnqueueBody) {
+  const client = envClient();
+  return client.enqueue(body);
+}
+```
+
+Environment variables:
+
+```
+HIVE_BASE_URL=https://hive.yourdomain.com
+HIVE_INTERNAL_TOKEN=... # optional, for enqueue
+HIVE_CALLBACK_SECRET=... # optional, for callback forwarding
+```
+
+For local development you can run the dispatcher (see `apps/dispatcher`) or
+point to an existing cluster.
 
 ---
 
