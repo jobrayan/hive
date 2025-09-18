@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  dispatcher:
+    build:
+      context: ../apps/dispatcher
+    container_name: hive-dispatcher
+    environment:
+      - WORKERS=http://hive-worker-1:8088,http://hive-worker-2:8088
+      - DISPATCHER_PORT=8099
+      - CALLBACK_SECRET=${HIVE_CALLBACK_SECRET:-local-secret}
+      # Optionally forward callbacks to your app (host.docker.internal maps to host)
+      # - ORIGINAL_CALLBACK_URL=http://host.docker.internal:3000/api/hive/callback
+      - MAX_QUEUE=1000
+    ports:
+      - "8099:8099"
+    restart: unless-stopped
+    networks:
+      - hive-net
+
+  worker-1:
+    build:
+      context: ../apps/python-agent
+    container_name: hive-worker-1
+    environment:
+      - WORKER_PORT=8088
+      - GIT_USER_NAME=${HIVE_GIT_NAME:-Codimir Agent}
+      - GIT_USER_EMAIL=${HIVE_GIT_EMAIL:-agent@codimir.dev}
+      - CALLBACK_URL=http://hive-dispatcher:8099/cb
+      - CALLBACK_SECRET=${HIVE_CALLBACK_SECRET:-local-secret}
+      # Optional: set GEMINI_API_KEY and GITHUB_TOKEN for real runs
+      # - GEMINI_API_KEY=
+      # - GITHUB_TOKEN=
+    restart: unless-stopped
+    networks:
+      - hive-net
+
+  worker-2:
+    build:
+      context: ../apps/python-agent
+    container_name: hive-worker-2
+    environment:
+      - WORKER_PORT=8088
+      - GIT_USER_NAME=${HIVE_GIT_NAME:-Codimir Agent}
+      - GIT_USER_EMAIL=${HIVE_GIT_EMAIL:-agent@codimir.dev}
+      - CALLBACK_URL=http://hive-dispatcher:8099/cb
+      - CALLBACK_SECRET=${HIVE_CALLBACK_SECRET:-local-secret}
+    restart: unless-stopped
+    networks:
+      - hive-net
+
+networks:
+  hive-net:
+    driver: bridge
+
