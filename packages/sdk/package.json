@@ -1,5 +1,5 @@
 {
-  "name": "hive",
+  "name": "@jobrayan/hive",
   "version": "0.1.0",
   "private": false,
   "type": "module",
