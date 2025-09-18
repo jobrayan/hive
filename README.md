@@ -1,7 +1,7 @@
 # 🐝 Hive — Distributed AI Worker Queue
 
 <p align="center">
-  <img src="public/hive.png" alt="Hive Banner" width="600"/>
+  <img src="public/hive.png" alt="Hive Banner" width="600" style="border-radius: 50%;"/>
 </p>
 
 ## Overview
